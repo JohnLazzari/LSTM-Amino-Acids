@@ -21,8 +21,8 @@ class LSTM(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        h_0 = Variable(torch.zeros(self.num_layers*2, x.size(0), self.hidden_size)).to('cuda:0') #hidden state
-        c_0 = Variable(torch.zeros(self.num_layers*2, x.size(0), self.hidden_size)).to('cuda:0') #internal state
+        h_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #hidden state
+        c_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #internal state
         # Propagate input through LSTM
         output, (hn, cn) = self.lstm(x, (h_0, c_0)) #lstm with input, hidden, and internal state
         hn = hn.view(-1, self.hidden_size) #reshaping the data for Dense layer next
@@ -37,46 +37,38 @@ train_set = np.load('train.npy', allow_pickle=True)
 val_set = np.load('val.npy', allow_pickle=True)
 print(np.shape(train_set))
 
-targets = torch.empty([len(train_set), 20])
+targets = []
 training_inputs = []
 end_token = torch.zeros([1, 20])
 # quick test for targets
 for i in range(len(train_set)):
-    targets[i] = torch.Tensor(np.array(train_set[i][-2]))
+    one_hot_target = torch.Tensor(np.array(train_set[i][-2]))
+    targets.append((one_hot_target == 1).nonzero(as_tuple=True)[0])
     new_train = torch.Tensor(np.array(train_set[i][:-2]))
     new_train = torch.cat((new_train, end_token), dim=0)
+    new_train = torch.unsqueeze(new_train, dim=0)
     training_inputs.append(new_train)
 
-print(targets.shape)
-print(training_inputs[0].shape)
-
-model = LSTM(20, 20, 1).to(device)
+model = LSTM(20, 40, 1).to(device)
 lr = .001
-epochs = 25
+epochs = 5
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=lr)
 
 for epoch in range(epochs):
-    #running_loss = 0
+    running_loss = 0
     for i, sequence in enumerate(training_inputs):
+        # Put data to devices
+        sequence, targets[i] = sequence.to(device), targets[i].to(device)
 
-        sequence = sequence.to(device)
-        sequence = torch.unsqueeze(sequence, 0)
-        target = (targets[i] == 1).nonzero(as_tuple=True)[0]
-        target = target.to(device)
-
+        # Standard training protocol, takes very long too much data
+        # Might need to implement batches, maybe add layers or make bidirectional
         optimizer.zero_grad()
         prediction = model(sequence)
-        loss = criterion(prediction, target)
-        print(loss)
-        #running_loss += loss.item()
+        loss = criterion(prediction, targets[i])
+        running_loss += loss.item()
         loss.backward()
         optimizer.step()
 
-    #running_loss /= len(training_inputs)
-    #print("Epoch {} training loss: {}".format(epoch, running_loss))
-        
-
-
-
-
+    running_loss /= len(training_inputs)
+    print("Epoch {} training loss: {}".format(epoch, running_loss))
