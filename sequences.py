@@ -45,6 +45,14 @@ for i, sequence in enumerate(sequences):
 train_sequences = np.array(train_sequences)
 val_sequences = np.array(val_sequences)
 
+print('Selecting 1% of dataset...')
+print(train_sequences.shape)
+print(val_sequences.shape)
+train_sequences = train_sequences[::100]
+val_sequences = val_sequences[::100]
+print(train_sequences.shape)
+print(val_sequences.shape)
+
 print('Saving dataset...')
 train_path = os.path.join(args.output_dir, 'train')
 val_path = os.path.join(args.output_dir, 'val')
