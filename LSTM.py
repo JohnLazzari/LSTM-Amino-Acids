@@ -5,7 +5,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
-from torch.autograd import Variable 
+from torch.autograd import Variable
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers):
@@ -15,15 +17,15 @@ class LSTM(nn.Module):
         self.input_size = input_size
         self.hidden_size = hidden_size
 
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, 
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
                             num_layers=num_layers, batch_first=True) #lstm
         self.fc_1 = nn.Linear(hidden_size, 128)
         self.fc = nn.Linear(128, input_size)
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        h_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #hidden state
-        c_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #internal state
+        h_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to(device) #hidden state
+        c_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to(device) #internal state
         # Propagate input through LSTM
         output, (hn, cn) = self.lstm(x, (h_0, c_0)) #lstm with input, hidden, and internal state
         hn = hn.view(-1, self.hidden_size) #reshaping the data for Dense layer next
@@ -33,16 +35,16 @@ class LSTM(nn.Module):
         out = self.fc(out) #Final Output
         return out
 
-device = 'cuda:0'
 train_set = np.load('train.npy', allow_pickle=True)
 val_set = np.load('val.npy', allow_pickle=True)
 print(np.shape(train_set))
 
-targets = []
+training_targets = []
 training_inputs = []
-end_token = torch.zeros([1, 20])
+end_token = np.zeros((1, 20))
 
 batch_size = 256
+max_seq_len = 100
 batch_targets = []
 batch_inputs = []
 # quick way to implement batches, should do this better
@@ -50,8 +52,8 @@ for i in range(len(train_set)):
 
     # create the batches and convert to tensors
     if i % batch_size == 0 and i != 0:
-        targets.append(torch.cat(batch_targets, dim=0))
-        training_inputs.append(torch.stack(batch_inputs, dim=0))
+        training_targets.append(torch.cat(batch_targets, dim=0))
+        training_inputs.append(batch_inputs)
         # reset
         batch_targets = []
         batch_inputs = []
@@ -60,17 +62,16 @@ for i in range(len(train_set)):
     one_hot_target = torch.Tensor(np.array(train_set[i][-2]))
     # Get it in the form of an index for cross entropy
     batch_targets.append((one_hot_target == 1).nonzero(as_tuple=True)[0])
-
-    # Get the last 51 sequence elements
-    cur_sequence = torch.Tensor(np.array(train_set[i][-51:]))
-    # remove the last 2 elements
-    cur_sequence = torch.Tensor(cur_sequence[:-2])
+    # Remove the last two characters
+    cur_sequence = np.array(train_set[i][:-2])
+    # Get up to max_seq_len elements from the end of the sequence
+    if len(cur_sequence) > max_seq_len:
+        cur_sequence = cur_sequence[-max_seq_len:]
     # concatenate the remaining sequence with the end token
-    cur_sequence = torch.cat((cur_sequence, end_token), dim=0)
-
-    # If the sequence is not 50 elements, pad it with zeros in the beginning
-    while cur_sequence.shape[0] < 50:
-        cur_sequence = torch.cat((end_token, cur_sequence), dim=0)
+    if len(cur_sequence) == 0:
+        cur_sequence = np.copy(end_token)
+    else:
+        cur_sequence = np.concatenate((cur_sequence, end_token), axis=0)
 
     # append to batch list
     batch_inputs.append(cur_sequence)
@@ -86,19 +87,26 @@ for epoch in range(epochs):
     # keep track of epoch loss
     running_loss = 0
     correct = 0
-    for i, sequence in enumerate(training_inputs):
-        # Put data to devices
-        sequence, targets[i] = sequence.to(device), targets[i].to(device)
+    for sequences, targets in zip(training_inputs, training_targets):
+        # Pad batch
+        for i, sequence in enumerate(sequences):
+            if len(sequence) < max_seq_len + 1:
+                pads = np.zeros((max_seq_len - sequence.shape[0] + 1, sequence.shape[1]))
+                sequences[i] = np.concatenate((pads, sequence), axis=0)
+        sequences = torch.Tensor(np.array(sequences))
+
+        # Move data to devices
+        sequences, targets = sequences.to(device), targets.to(device)
 
         optimizer.zero_grad()
-        prediction = model(sequence)
+        predictions = model(sequences)
         # Get the final hidden state for the batch, should be the last 256
-        prediction = prediction[-256:]
-        loss = criterion(prediction, targets[i])
+        predictions = predictions[-256:]
+        loss = criterion(predictions, targets)
 
         # Getting predictions and training accuracy
-        pred = prediction.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-        correct += pred.eq(targets[i].view_as(pred)).sum().item()
+        preds = predictions.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+        correct += preds.eq(targets.view_as(preds)).sum().item()
 
         # keep track of loss
         running_loss += loss.item()
