@@ -16,7 +16,7 @@ class LSTM(nn.Module):
         self.hidden_size = hidden_size
 
         self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, 
-                            num_layers=num_layers, batch_first=True, dropout=.2) #lstm
+                            num_layers=num_layers, batch_first=True) #lstm
         self.fc_1 = nn.Linear(hidden_size, 128)
         self.fc = nn.Linear(128, input_size)
         self.relu = nn.ReLU()
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     training_inputs = []
     end_token = torch.zeros([1, 20])
 
-    batch_size = 481
+    batch_size = 481 # Prime factor batch size
     batch_targets = []
     batch_inputs = []
 
@@ -73,7 +73,7 @@ if __name__ == '__main__':
             # Get it in the form of an index for cross entropy
             batch_targets.append((one_hot_target == 1).nonzero(as_tuple=True)[0])
 
-            # Get the last 51 sequence elements
+            # Get the last 101 sequence elements
             cur_sequence = torch.Tensor(np.array(train_set[i][-101:]))
             # remove the last 2 elements
             cur_sequence = torch.Tensor(cur_sequence[:-2])
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     # Standard training components
     model = LSTM(20, 60, 4).to(device)
     lr = .001
-    epochs = 100
+    epochs = 300
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
