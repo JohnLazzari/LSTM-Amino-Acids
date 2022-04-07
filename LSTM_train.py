@@ -123,7 +123,7 @@ if __name__ == '__main__':
     # Standard training components
     model = LSTM(20, 60, 4).to(device)
     lr = .001
-    epochs = 300
+    epochs = 100
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
