@@ -5,33 +5,42 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
-from torch.autograd import Variable 
+from torch.autograd import Variable
 
 class LSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers):
+    def __init__(self, input_size, hidden_size, num_layers, pred_len=1):
         super(LSTM, self).__init__()
 
         self.num_layers = num_layers
         self.input_size = input_size
         self.hidden_size = hidden_size
+        self.pred_len = pred_len
 
-        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, 
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
                             num_layers=num_layers, batch_first=True) #lstm
         self.fc_1 = nn.Linear(hidden_size, 128)
         self.fc = nn.Linear(128, input_size)
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        h_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #hidden state
-        c_0 = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #internal state
-        # Propagate input through LSTM
-        output, (hn, cn) = self.lstm(x, (h_0, c_0)) #lstm with input, hidden, and internal state
-        hn = hn.view(-1, self.hidden_size) #reshaping the data for Dense layer next
-        out = self.relu(hn)
-        out = self.fc_1(out) #first Dense
-        out = self.relu(out) #relu
-        out = self.fc(out) #Final Output
-        return out
+        h = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #hidden state
+        c = Variable(torch.zeros(self.num_layers, x.size(0), self.hidden_size)).to('cuda:0') #internal state
+
+        out = []
+        for i in range(self.pred_len):
+            # Propagate input through LSTM
+            output, (h, c) = self.lstm(x, (h, c)) #lstm with input, hidden, and internal state
+            out_i = h.view(-1, self.hidden_size) #reshaping the data for Dense layer next
+            out_i = self.relu(out_i)
+            out_i = self.fc_1(out_i) #first Dense
+            out_i = self.relu(out_i) #relu
+            out_i = self.fc(out_i) #Final Output
+            out.append(out_i)
+
+        if self.pred_len == 1:
+            return out[0]
+        else:
+            return out
 
 if __name__ == '__main__':
 
@@ -129,9 +138,11 @@ if __name__ == '__main__':
 
     training_loss_plot = []
     training_accuracy_plot = []
+    training_perplexity_plot = []
 
     validation_loss_plot = []
     validation_accuracy_plot = []
+    validation_perplexity_plot = []
 
     for epoch in range(epochs):
         # keep track of epoch loss
@@ -159,9 +170,13 @@ if __name__ == '__main__':
 
         running_loss /= len(training_inputs)
         total_correct = 100 * correct / (len(training_inputs)*batch_size)
+        perplexity = np.exp(running_loss)
+
         training_loss_plot.append(running_loss)
         training_accuracy_plot.append(total_correct)
-        print("Epoch {} training loss: {}, Training acc: {}".format(epoch, running_loss, total_correct))
+        training_perplexity_plot.append(perplexity)
+
+        print("Epoch {} Training loss: {}, Training acc: {}, Training perplexity: {}".format(epoch, running_loss, total_correct, perplexity))
 
         # Check the validation set during training
         with torch.no_grad():
@@ -183,19 +198,35 @@ if __name__ == '__main__':
             # get the accuracy
             validation_loss /= len(val_sequences)
             val_acc = 100 * val_acc / (len(val_sequences) * val_batch_size)
+            val_perplexity = np.exp(validation_loss)
+
             validation_loss_plot.append(validation_loss)
             validation_accuracy_plot.append(val_acc)
-            print("Validation Accuracy: {}, Validation Loss: {}".format(val_acc, validation_loss))
+            validation_perplexity_plot.append(val_perplexity)
 
-    torch.save(model.state_dict(), 'lstm.pth')
+            print("Validation Accuracy: {}, Validation Loss: {}, Validation Perplexity: {}".format(val_acc, validation_loss, val_perplexity))
+
+    torch.save(model.state_dict(), 'lstm_new.pth')
     plt.plot(training_loss_plot)
-    plt.show()
+    plt.savefig('train_loss.png')
+    plt.clf()
 
     plt.plot(training_accuracy_plot)
-    plt.show()
+    plt.savefig('train_acc.png')
+    plt.clf()
+
+    plt.plot(training_perplexity_plot)
+    plt.savefig('train_perp.png')
+    plt.clf()
 
     plt.plot(validation_accuracy_plot)
-    plt.show()
+    plt.savefig('val_acc.png')
+    plt.clf()
 
     plt.plot(validation_loss_plot)
-    plt.show()
+    plt.savefig('val_loss.png')
+    plt.clf()
+
+    plt.plot(validation_perplexity_plot)
+    plt.savefig('val_perp.png')
+    plt.clf()

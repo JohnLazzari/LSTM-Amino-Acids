@@ -7,6 +7,8 @@ parser = argparse.ArgumentParser(
     'Generate a train and validation dataset from the pdb_seqres.txt file.')
 parser.add_argument('--output-dir', type=str, default='.',
     help='The directory in which to save the datasets.')
+parser.add_argument('--full', action='store_true',
+    help='Process and save the entire dataset.')
 args = parser.parse_args()
 
 if not os.path.isdir(args.output_dir):
@@ -44,6 +46,11 @@ for i, sequence in enumerate(sequences):
 
 train_sequences = np.array(train_sequences)
 val_sequences = np.array(val_sequences)
+
+if not args.full:
+    print('Selecting 1% of dataset...')
+    train_sequences = train_sequences[::100]
+    val_sequences = val_sequences[::100]
 
 print('Saving dataset...')
 train_path = os.path.join(args.output_dir, 'train')
